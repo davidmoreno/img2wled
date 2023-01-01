@@ -18,33 +18,39 @@ def gen_str_from_img(frame):
     rows = int(args.rows)
     cols = int(args.cols)
     frame = frame.resize((rows, cols), resample=Image.NEAREST)
-    lastpx = None
     pixels = frame.load()
-    commands = [1]
+    commands = [0]
     # frame.show()
 
     pxn = 0
-    runl = 0
     lpxn = 0
     for c in range(cols):
         for r in range(rows):
+            px = pixels[r, c]
+            if pxn == 0:
+                commands.append(px) # double?
             lpxn += 1
             pxn += 1
-            px = pixels[r, c]
             commands.append(px)
         if pxn >= MAX_PIXELS:
             pxn = 0
             yield {
                 "on": True,
+                "tt": 0,
+                "bri": 255,
                 "seg": {
+                "frz": True,
                     "i": commands
                 }
             }
-            commands = [lpxn+1]
+            commands = [lpxn]
 
     yield {
         "on": True,
+        "tt": 0,
+        "bri": 255,
         "seg": {
+            "frz": True,
             "i": commands
         }
     }
