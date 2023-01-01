@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 import json
 import argparse
+import time
 import requests
 
 from PIL import Image, ImageSequence
@@ -64,27 +65,30 @@ def setup():
                     description = 'Convert any image to curl commands',
                     epilog = 'To be used to print images a WLED matrixes.')    
 
-    parser.add_argument('filename', nargs=1)          
+    parser.add_argument('filename', nargs="+")          
     parser.add_argument('-c', '--cols', help="Column count", default=16)
     parser.add_argument('-r', '--rows', help="Row count", default=16)      
     parser.add_argument('--ip', help="IP to send to.", default="wled.local")      
+    parser.add_argument('--sleep', help="ms to sleep between images, if several given.", default="300")      
     parser.add_argument('--curl', help="Print curl commands, instead of directly executing the request", action="store_true", default=False)      
     args = parser.parse_args()
 
 def main():
     setup()
 
-    img = args.filename[0]
-    if not img:
-        print("Required image file name")
-        return
-    # img = sys.argv[1]
-    for segment in gen_str(img):
-        if args.curl:
-            print(
-                f"curl -X POST 'http://{args.ip}/json/state' -H 'Content-Type: application/json' -d '{json.dumps(segment)}'")
-        else:
-            requests.post(f"http://{args.ip}/json/śtate", data=json.dumps(segment), headers={"Content-Type": "application/json"})
+    for img in args.filename:
+        if not img:
+            print("Required image file name")
+            return
+        # img = sys.argv[1]
+        for segment in gen_str(img):
+            if args.curl:
+                print(
+                    f"curl -X POST 'http://{args.ip}/json/state' -H 'Content-Type: application/json' -d '{json.dumps(segment)}'")
+            else:
+                requests.post(f"http://{args.ip}/json/śtate", data=json.dumps(segment), headers={"Content-Type": "application/json"})
+        if len(args.filename) > 1:
+            time.sleep(int(args.sleep) / 1000)
 
 
 if __name__ == '__main__':
