@@ -15,17 +15,33 @@ args = None
 
 
 def gen_str_from_img(frame: Image.Image) -> Generator[dict, None, None]:
+    """
+    To all image can be sent in one go, so it needs to be split into multiple segments.
+    This function returns a generator that yields one segment at a time.
+    Each segment is a dict with the following keys:
+    - on: boolean, true if the segment is on
+    - tt: integer, transition time in milliseconds
+    - bri: integer, brightness of the segment
+    - seg: dict with the following keys:
+      - frz: boolean, true if the segment is frozen
+      - i: list of integers, pixel values
+      The i list is a list of integers, each integer is a pixel value.
+      The pixel value is a tuple of three integers, each integer is a color value.
+      The color value is a integer between 0 and 255.
+      The pixel value is a tuple of three integers, each integer is a color value.
+    """
     frame = frame.convert("RGB")
     rows = int(args.rows)
     cols = int(args.cols)
+    tt = int(args.transition_time)
     frame = frame.resize((rows, cols), resample=Image.NEAREST)
     pixels = frame.load()
     commands = [0]
     # frame.show()
     brightness = int(args.brightness)
 
-    pxn = 0
-    lpxn = 0
+    pxn = 0  # pixel number in this segment
+    lpxn = 0  # total pixel number in this frame
     for c in range(cols):
         for r in range(rows):
             px = pixels[r, c]
@@ -38,13 +54,21 @@ def gen_str_from_img(frame: Image.Image) -> Generator[dict, None, None]:
             pxn = 0
             yield {
                 "on": True,
-                "tt": 0,
+                "tt": tt,
                 "bri": brightness,
                 "seg": {"frz": True, "i": commands},
             }
             commands = [lpxn]
 
-    yield {"on": True, "tt": 0, "bri": brightness, "seg": {"frz": True, "i": commands}}
+    yield {
+        "on": True,
+        "tt": tt,
+        "bri": brightness,
+        "seg": {
+            "frz": True,
+            "i": commands,
+        },
+    }
 
 
 def gen_str(image):
@@ -88,6 +112,12 @@ def setup():
         "--brightness",
         help="Brightness of the color, 0-255",
         default=255,
+        type=int,
+    )
+    parser.add_argument(
+        "--transition-time",
+        help="Transition time in milliseconds",
+        default=0,
         type=int,
     )
     args = parser.parse_args()
