@@ -39,14 +39,15 @@ def gen_str_from_img(frame: Image.Image) -> Generator[dict, None, None]:
     commands = [0]
     # frame.show()
     brightness = int(args.brightness)
+    frz = True  # should be True, if not effects takes over.
 
     pxn = 0  # pixel number in this segment
     lpxn = 0  # total pixel number in this frame
     for c in range(cols):
         for r in range(rows):
             px = pixels[r, c]
-            if pxn == 0:
-                commands.append(px)  # double?
+            # if pxn == 0:
+            #     commands.append(px)  # double?
             lpxn += 1
             pxn += 1
             commands.append(px)
@@ -56,7 +57,7 @@ def gen_str_from_img(frame: Image.Image) -> Generator[dict, None, None]:
                 "on": True,
                 "tt": tt,
                 "bri": brightness,
-                "seg": {"frz": True, "i": commands},
+                "seg": {"frz": frz, "i": commands},
             }
             commands = [lpxn]
 
@@ -65,7 +66,7 @@ def gen_str_from_img(frame: Image.Image) -> Generator[dict, None, None]:
         "tt": tt,
         "bri": brightness,
         "seg": {
-            "frz": True,
+            "frz": frz,
             "i": commands,
         },
     }
@@ -94,7 +95,7 @@ def setup():
     parser.add_argument("-r", "--rows", help="Row count", default=16)
     parser.add_argument("--ip", help="IP to send to.", default="wled.local")
     parser.add_argument(
-        "--sleep", help="ms to sleep between images, if several given.", default="300"
+        "--sleep", help="ms to sleep between images, if several given.", default="3000"
     )
     parser.add_argument(
         "--curl",
@@ -111,28 +112,37 @@ def setup():
     parser.add_argument(
         "--brightness",
         help="Brightness of the color, 0-255",
-        default=255,
+        default=10,  # higher brightness gives me a
         type=int,
     )
     parser.add_argument(
         "--transition-time",
-        help="Transition time in milliseconds",
+        help="Transition time in milliseconds -- mayeb does not work?",
         default=0,
         type=int,
+    )
+    parser.add_argument(
+        "--loop",
+        help="Loop the images",
+        action="store_true",
+        default=False,
     )
     args = parser.parse_args()
 
 
 def show_images(images):
-    for img in args.filename:
-        if not img:
-            print("Required image file name")
-            return
-        # img = sys.argv[1]
-        for segment in gen_str(img):
-            show_segment(segment)
-        if len(args.filename) > 1:
-            time.sleep(int(args.sleep) / 1000)
+    while True:
+        for img in images:
+            if not img:
+                print("Required image file name")
+                return
+            # img = sys.argv[1]
+            for segment in gen_str(img):
+                show_segment(segment)
+            if len(args.filename) > 1:
+                time.sleep(int(args.sleep) / 1000)
+        if not args.loop:
+            break
 
 
 def show_segment(segment):
