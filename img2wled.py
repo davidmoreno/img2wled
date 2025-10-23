@@ -24,52 +24,96 @@ def gen_str_from_img(frame: Image.Image) -> Generator[dict, None, None]:
     - bri: integer, brightness of the segment
     - seg: dict with the following keys:
       - frz: boolean, true if the segment is frozen
-      - i: list of integers, pixel values
-      The i list is a list of integers, each integer is a pixel value.
-      The pixel value is a tuple of three integers, each integer is a color value.
-      The color value is a integer between 0 and 255.
-      The pixel value is a tuple of three integers, each integer is a color value.
+      - i: list of pixel data, supporting two formats:
+
+    Format 1 - Individual pixels:
+      - First element: starting pixel index (integer)
+      - Subsequent elements: RGB tuples for each pixel
+      - Example: [0, (255,0,0), (0,255,0), (0,0,255)] for pixels 0,1,2 with colors red,green,blue
+
+    Format 2 - Range optimization:
+      - First element: starting pixel index (integer)
+      - Second element: ending pixel index (integer)
+      - Third element: RGB tuple for the entire range
+      - Example: [0, 4, (255,255,255)] for pixels 0-4 all white
+
+    The function automatically optimizes by using range format when consecutive pixels
+    have the same color, reducing data transmission size.
     """
     frame = frame.convert("RGB")
     rows = int(args.rows)
     cols = int(args.cols)
     tt = int(args.transition_time)
-    frame = frame.resize((rows, cols), resample=Image.NEAREST)
+    frame = frame.resize((rows, cols), resample=Image.Resampling.NEAREST)
     pixels = frame.load()
-    commands = [0]
-    # frame.show()
     brightness = int(args.brightness)
     frz = True  # should be True, if not effects takes over.
 
-    pxn = 0  # pixel number in this segment
-    lpxn = 0  # total pixel number in this frame
+    # Collect all pixels first
+    all_pixels = []
     for c in range(cols):
         for r in range(rows):
-            px = pixels[r, c]
-            # if pxn == 0:
-            #     commands.append(px)  # double?
-            lpxn += 1
-            pxn += 1
-            commands.append(px)
-        if pxn >= MAX_PIXELS_PER_POST:
-            pxn = 0
-            yield {
-                "on": True,
-                "tt": tt,
-                "bri": brightness,
-                "seg": {"frz": frz, "i": commands},
-            }
-            commands = [lpxn]
+            all_pixels.append(pixels[r, c])
 
-    yield {
-        "on": True,
-        "tt": tt,
-        "bri": brightness,
-        "seg": {
-            "frz": frz,
-            "i": commands,
-        },
-    }
+    # Process pixels in segments with range optimization
+    segment_start = 0
+    total_pixels = len(all_pixels)
+
+    while segment_start < total_pixels:
+        segment_end = min(segment_start + MAX_PIXELS_PER_POST, total_pixels)
+        segment_pixels = all_pixels[segment_start:segment_end]
+
+        # Optimize this segment using range compression
+        optimized_commands = optimize_pixel_segment(segment_pixels, segment_start)
+
+        yield {
+            "on": True,
+            "tt": tt,
+            "bri": brightness,
+            "seg": {"frz": frz, "i": optimized_commands},
+        }
+
+        segment_start = segment_end
+
+
+def optimize_pixel_segment(pixels: list, start_index: int) -> list:
+    """
+    Optimize a segment of pixels by using range format when consecutive pixels
+    have the same color.
+
+    Args:
+        pixels: List of RGB tuples for the segment
+        start_index: Starting pixel index for this segment
+
+    Returns:
+        Optimized command list using range format where beneficial
+    """
+    if not pixels:
+        return [start_index]
+
+    optimized = []
+    i = 0
+
+    while i < len(pixels):
+        current_color = pixels[i]
+        range_start = i
+
+        # Find consecutive pixels with the same color
+        while i < len(pixels) and pixels[i] == current_color:
+            i += 1
+
+        range_length = i - range_start
+
+        if range_length == 1:
+            # Single pixel - use individual format
+            optimized.append(current_color)
+        else:
+            # Multiple consecutive pixels with same color - use range format
+            pixel_index = start_index + range_start
+            end_index = pixel_index + range_length
+            optimized.extend([pixel_index, end_index, current_color])
+
+    return [start_index] + optimized
 
 
 def gen_str(image):
