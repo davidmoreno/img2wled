@@ -10,7 +10,7 @@ import requests
 from PIL import Image, ImageSequence
 
 
-MAX_PIXELS_PER_POST = 8 * 16
+MAX_DATA_PER_POST = 16 * 16
 args = None
 
 
@@ -55,25 +55,48 @@ def gen_str_from_img(frame: Image.Image) -> Generator[dict, None, None]:
         for r in range(rows):
             all_pixels.append(pixels[r, c])
 
-    # Process pixels in segments with range optimization
+    # Generate all optimized commands for the entire image
+    all_commands = optimize_pixel_segment(all_pixels, 0)
+
+    # Split commands into segments respecting MAX_DATA_PER_POST
+    # Each command tuple counts as its length in data items
     segment_start = 0
-    total_pixels = len(all_pixels)
 
-    while segment_start < total_pixels:
-        segment_end = min(segment_start + MAX_PIXELS_PER_POST, total_pixels)
-        segment_pixels = all_pixels[segment_start:segment_end]
+    while segment_start < len(all_commands):
+        segment_commands = []
+        data_count = 0
 
-        # Optimize this segment using range compression
-        optimized_commands = optimize_pixel_segment(segment_pixels, segment_start)
+        # Add commands until we reach the limit
+        for i in range(segment_start, len(all_commands)):
+            command = all_commands[i]
+            command_data_count = len(command)  # 2 for individual, 3 for range
+
+            if data_count + command_data_count > MAX_DATA_PER_POST:
+                break
+
+            segment_commands.append(command)
+            data_count += command_data_count
+
+        # Convert command tuples to flat list format
+        flat_commands = []
+        for command in segment_commands:
+            flat_commands.extend(command)
+
+        # Add starting pixel index at the beginning
+        if segment_commands:
+            start_pixel = segment_commands[0][0]
+            final_commands = [start_pixel] + flat_commands
+        else:
+            final_commands = [0]
 
         yield {
             "on": True,
             "tt": tt,
             "bri": brightness,
-            "seg": {"frz": frz, "i": optimized_commands},
+            "seg": {"frz": frz, "i": final_commands},
         }
 
-        segment_start = segment_end
+        segment_start += len(segment_commands)
 
 
 def optimize_pixel_segment(pixels: list, start_index: int) -> list:
@@ -86,12 +109,15 @@ def optimize_pixel_segment(pixels: list, start_index: int) -> list:
         start_index: Starting pixel index for this segment
 
     Returns:
-        Optimized command list using range format where beneficial
+        List of complete command tuples. Each tuple represents either:
+        - Individual pixel: (pixel_index, color)
+        - Range: (start_index, end_index, color)
+        End index is the last pixel in the range, not including the last pixel.
     """
     if not pixels:
-        return [start_index]
+        return []
 
-    optimized = []
+    commands = []
     i = 0
 
     while i < len(pixels):
@@ -106,14 +132,15 @@ def optimize_pixel_segment(pixels: list, start_index: int) -> list:
 
         if range_length == 1:
             # Single pixel - use individual format
-            optimized.append(current_color)
+            pixel_index = start_index + range_start
+            commands.append((pixel_index, current_color))
         else:
             # Multiple consecutive pixels with same color - use range format
             pixel_index = start_index + range_start
             end_index = pixel_index + range_length
-            optimized.extend([pixel_index, end_index, current_color])
+            commands.append((pixel_index, end_index, current_color))
 
-    return [start_index] + optimized
+    return commands
 
 
 def gen_str(image):
@@ -182,30 +209,34 @@ def show_images(images):
                 return
             # img = sys.argv[1]
             for segment in gen_str(img):
-                show_segment(segment)
+                show_segment(img, segment)
             if len(args.filename) > 1:
                 time.sleep(int(args.sleep) / 1000)
         if not args.loop:
             break
 
 
-def show_segment(segment):
+def show_segment(name, segment):
     if args.curl:
         print(
             f"curl -X POST 'http://{args.ip}/json/state' -H 'Content-Type: application/json' -d '{json.dumps(segment)}'"
         )
     else:
-        requests.post(
+
+        ret = requests.post(
             f"http://{args.ip}/json/śtate",
             data=json.dumps(segment),
             headers={"Content-Type": "application/json"},
+        )
+        print(
+            f"Sending image={name}, size={len(json.dumps(segment))}, status={ret.status_code}"
         )
 
 
 def show_solid_color(color: tuple[int, int, int]):
     frame = Image.new("RGB", (int(args.rows), int(args.cols)), color)
     for image in gen_str_from_img(frame):
-        show_segment(image)
+        show_segment("test", image)
 
 
 def hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
